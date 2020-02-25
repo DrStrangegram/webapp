@@ -17,13 +17,24 @@ module.exports = (env, argv) => {
             'babel-loader',
           ],
           exclude: /node_modules/,
-        },
+        }, {
+          test: /\.css$/,
+          use: [
+            'style-loader',
+            { loader: 'css-loader', options: { importLoaders: 1, url: false } },
+            'postcss-loader'
+          ]
+        }
       ],
     },
     output: {
       path: path.resolve(__dirname, 'umd'),
-      filename: `[name].${mode}.js`,
+      filename: `[name].js`,
       publicPath: '/umd/'
+    },
+    devServer: {
+      compress: true,
+      port: 9000,
     },
     optimization: {
       minimizer: [
@@ -45,16 +56,8 @@ module.exports = (env, argv) => {
     },
     plugins: [
       new CopyPlugin([
-        { from: `node_modules/tinode-sdk/umd/tinode.${mode}.js`, to: `tinode.${mode}.js` },
+        { from: `node_modules/tinode-sdk/umd/tinode.${mode}.js`, to: `tinode.js` },
       ]),
     ],
-    externals: {
-      'react': 'React',
-      'react-dom': 'ReactDOM',
-      'react-intl': 'ReactIntl',
-      'firebase/app': 'firebase',
-      'firebase/messaging': ['firebase', 'messaging'],
-      'tinode-sdk': 'Tinode',
-    },
   };
 }
