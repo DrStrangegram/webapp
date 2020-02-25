@@ -1,6 +1,9 @@
 // Put all packages together.
 // Used to generate umd/index.prod.js
 
+import '../css/base.css';
+import '../firebase-init';
+
 import React from 'react';
 import ReactDOM from 'react-dom';
 
