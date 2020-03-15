@@ -1,5 +1,6 @@
 // Put all packages together.
 // Used to generate umd/index.prod.js
+import 'react-hot-loader/patch';
 
 import '../css/base.css';
 import '../firebase-init';
@@ -7,6 +8,7 @@ import '../firebase-init';
 import React from 'react';
 import ReactDOM from 'react-dom';
 
+import { AppContainer } from 'react-hot-loader';
 import { IntlProvider } from 'react-intl';
 
 import allMessages from './messages.json';
@@ -31,9 +33,22 @@ const messages =
   allMessages[baseLanguage] ||
   allMessages.en;
 
-ReactDOM.render(
-  <IntlProvider locale={language} messages={messages} textComponent={React.Fragment}>
-    <TinodeWeb />
-  </IntlProvider>,
-  document.getElementById('mountPoint')
-);
+const render = function(RootComponent) {
+  ReactDOM.render(
+    <AppContainer>
+      <IntlProvider locale={language} messages={messages} textComponent={React.Fragment}>
+        <RootComponent />
+      </IntlProvider>
+    </AppContainer>,
+    document.getElementById('mountPoint')
+  );
+}
+
+render(TinodeWeb);
+
+if (module.hot) {
+  module.hot.accept('./views/tinode-web.jsx', () => {
+    const NextRootContainer = require('./views/tinode-web.jsx').default;
+    render(NextRootContainer);
+  })
+}
