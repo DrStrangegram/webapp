@@ -1,6 +1,9 @@
 // Send message form.
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { defineMessages, injectIntl } from 'react-intl';
+import { IconButton, Fab, InputBase, Box, Paper } from '@material-ui/core';
+import { Photo, AttachFile, Send } from '@material-ui/icons';
+import { makeStyles } from '@material-ui/styles';
 import { Drafty } from 'tinode-sdk';
 
 import { KEYPRESS_DELAY, MAX_EXTERN_ATTACHMENT_SIZE, MAX_IMAGE_DIM, MAX_INBAND_ATTACHMENT_SIZE } from '../config.js';
@@ -30,57 +33,107 @@ const messages = defineMessages({
   },
 });
 
-class SendMessage extends React.PureComponent {
-  constructor(props) {
-    super(props);
-
-    this.state = {
-      message: '',
-      // Make initial keypress time as if it happened 5001 milliseconds in the past.
-      keypressTimestamp: new Date().getTime() - KEYPRESS_DELAY - 1
-    };
-
-    this.handlePasteEvent = this.handlePasteEvent.bind(this);
-    this.handleAttachImage = this.handleAttachImage.bind(this);
-    this.handleAttachFile = this.handleAttachFile.bind(this);
-    this.handleSend = this.handleSend.bind(this);
-    this.handleKeyPress = this.handleKeyPress.bind(this);
-    this.handleMessageTyping = this.handleMessageTyping.bind(this);
+const useStyles = makeStyles(theme => ({
+  root: {
+    flex: 1,
+    display: 'flex',
+    padding: 8,
+    color: 'transparent'
+  },
+  messageBox: {
+    flex: 1,
+    display: 'flex',
+    backgroundColor: 'white',
+    borderRadius: 22,
+    paddingLeft: 16,
+    marginRight: 8
+  },
+  input: {
+    flex: 1
+  },
+  aButtonContainer: {
+    position: 'relative',
+    width: 44,
+    minHeight: 44
+  },
+  sendContainer: {
+    position: 'relative',
+    width: 40
+  },
+  button: {
+    position: 'absolute',
+    bottom: 0
   }
+}));
 
-  componentDidMount() {
-    this.messageEditArea.addEventListener('paste', this.handlePasteEvent, false);
-  }
 
-  componentWillUnmount() {
-    this.messageEditArea.removeEventListener('paste', this.handlePasteEvent, false);
-  }
+const SendMessage = (props) => {  
+  //States
+  const [message, setMessage] = useState('');
+  const [keypressTimestamp, setKeypressTimestamp] = useState(new Date().getTime() - KEYPRESS_DELAY - 1);
+  
+  //Refs
+  const messageEditArea = React.createRef();
+  var attachFile, attachImage;
+  
+  const classes = useStyles();
+  const {formatMessage} = props.intl;
+  const prompt = formatMessage(props.disabled ? messages.messaging_disabled : messages.type_new_message);
 
-  componentDidUpdate() {
-    this.messageEditArea.focus();
-  }
+  const _handleSend = (e) => {
+    const msg = message.trim();
 
-  handlePasteEvent(e) {
-    if (this.props.disabled) {
-      return;
+    if (msg) {
+      props.sendMessage(msg);
+      setMessage('');
     }
-    // FIXME: handle large files too.
-    if (filePasted(e,
-      (bits, mime, width, height, fname) => {
-        this.props.sendMessage(Drafty.insertImage(null,
-          0, mime, bits, width, height, fname));
-      },
-      (mime, bits, fname) => {
-        this.props.sendMessage(Drafty.attachFile(null, mime, bits, fname));
-      },
-      this.props.onError)) {
+  };
 
-      // If a file was pasted, don't paste base64 data into input field.
-      e.preventDefault();
+  const _handleKeyPress = (e) => {
+    if (e.key === 'Enter') { // Remove this if you don't want Enter to trigger send
+      if (!e.shiftKey) { // Have Shift-Enter insert a line break instead
+        e.preventDefault();
+        e.stopPropagation();
+
+        _handleSend(e);
+      }
     }
-  }
+  };
 
-  handleAttachImage(e) {
+  const _handlePasteEvent = (e) => {
+    if (!props.disabled) {
+      // FIXME: handle large files too.
+      if (filePasted(e, (bits, mime, width, height, fname) => {
+          props.sendMessage(Drafty.insertImage(null,
+            0, mime, bits, width, height, fname));
+        },
+        (mime, bits, fname) => {
+          props.sendMessage(Drafty.attachFile(null, mime, bits, fname));
+        },
+        props.onError)) {
+  
+        // If a file was pasted, don't paste base64 data into input field.
+        e.preventDefault();
+      }
+    } 
+  };
+
+  const _handleMessageTyping = (e) => {
+    const now = new Date().getTime();
+
+    if (now - keypressTimestamp > KEYPRESS_DELAY) {
+      const topic = props.tinode.getTopic(props.topic);
+      
+      if (topic.isSubscribed()) {
+        topic.noteKeyPress();
+      }
+      setKeypressTimestamp(now);
+    }
+
+    setMessage(e.target.value);
+  };
+
+  const _handleAttachImage = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
       // Check if the uploaded file is indeed an image and if it isn't too large.
@@ -89,136 +142,94 @@ class SendMessage extends React.PureComponent {
         imageFileScaledToBase64(file, MAX_IMAGE_DIM, MAX_IMAGE_DIM, false,
           // Success
           (bits, mime, width, height, fname) => {
-            this.props.sendMessage(Drafty.insertImage(null,
-              0, mime, bits, width, height, fname));
+            props.sendMessage(Drafty.insertImage(null, 0, mime, bits, width, height, fname));
           },
           // Failure
           (err) => {
-            this.props.onError(err, 'err');
+            props.onError(err, 'err');
           });
       } else {
         // Image can be uploaded as is. No conversion is needed.
         imageFileToBase64(file,
           // Success
           (bits, mime, width, height, fname) => {
-            this.props.sendMessage(Drafty.insertImage(null,
-              0, mime, bits, width, height, fname));
+            props.sendMessage(Drafty.insertImage(null, 0, mime, bits, width, height, fname));
           },
           // Failure
           (err) => {
-            this.props.onError(err, 'err');
+            props.onError(err, 'err');
           }
         );
       }
     }
     // Clear the value so the same file can be uploaded again.
     e.target.value = '';
-  }
+  };
 
-  handleAttachFile(e) {
-    const {formatMessage} = this.props.intl;
+  const _handleAttachFile = (e) => {
     if (e.target.files && e.target.files.length > 0) {
       const file = e.target.files[0];
-      if (file.size > MAX_EXTERN_ATTACHMENT_SIZE) {
-        // Too large.
-        this.props.onError(formatMessage(messages.file_attachment_too_large,
-            {size: bytesToHumanSize(file.size), limit: bytesToHumanSize(MAX_EXTERN_ATTACHMENT_SIZE)}), 'err');
-      } else if (file.size > MAX_INBAND_ATTACHMENT_SIZE) {
-        // Too large to send inband - uploading out of band and sending as a link.
-        const uploader = this.props.tinode.getLargeFileHelper();
+
+      if (file.size > MAX_EXTERN_ATTACHMENT_SIZE) { // Too large.
+        props.onError(formatMessage(messages.file_attachment_too_large, { size: bytesToHumanSize(file.size), limit: bytesToHumanSize(MAX_EXTERN_ATTACHMENT_SIZE)}), 'err');
+      } else if (file.size > MAX_INBAND_ATTACHMENT_SIZE) { // Too large to send inband - uploading out of band and sending as a link.
+        const uploader = props.tinode.getLargeFileHelper();
+
         if (!uploader) {
-          this.props.onError(formatMessage(messages.cannot_initiate_upload));
+          props.onError(formatMessage(messages.cannot_initiate_upload));
           return;
         }
         // Format data and initiate upload.
         const uploadCompletionPromise = uploader.upload(file);
         const msg = Drafty.attachFile(null, file.type, null, file.name, file.size, uploadCompletionPromise);
+
         // Pass data and the uploader to the TinodeWeb.
-        this.props.sendMessage(msg, uploadCompletionPromise, uploader);
-      } else {
-        // Small enough to send inband.
+        props.sendMessage(msg, uploadCompletionPromise, uploader);
+      } else { // Small enough to send inband.
         fileToBase64(file,
           (mime, bits, fname) => {
-            this.props.sendMessage(Drafty.attachFile(null, mime, bits, fname));
+            props.sendMessage(Drafty.attachFile(null, mime, bits, fname));
           },
-          this.props.onError
+          props.onError
         );
       }
     }
     // Clear the value so the same file can be uploaded again.
     e.target.value = '';
-  }
+  };
 
-  handleSend(e) {
-    e.preventDefault();
-    const message = this.state.message.trim();
-    if (message) {
-      this.props.sendMessage(this.state.message.trim());
-      this.setState({message: ''});
-    }
-  }
+  useEffect(() => {
+    const msgEdit = messageEditArea.current;
+    
+    msgEdit.addEventListener('paste', _handlePasteEvent, false);
+    msgEdit.addEventListener('keypress', _handleKeyPress, false);
 
-  /* Send on Enter key */
-  handleKeyPress(e) {
-    // Remove this if you don't want Enter to trigger send
-    if (e.key === 'Enter') {
-      // Have Shift-Enter insert a line break instead
-      if (!e.shiftKey) {
-        e.preventDefault();
-        e.stopPropagation();
+    return function cleanup() {
+      msgEdit.removeEventListener('paste', _handlePasteEvent, false);
+      msgEdit.removeEventListener('keypress', _handleKeyPress, false);
+    };
+  });
 
-        this.handleSend(e);
-      }
-    }
-  }
+  return (
+    <Box className={classes.root}>
+      <Paper className={classes.messageBox}>
+        <InputBase className={classes.input} multiline id="sendMessage" inputRef={messageEditArea} placeholder={prompt} value={message} onChange={_handleMessageTyping}/>
+        <Box className={classes.aButtonContainer}>
+          <IconButton className={classes.button} disabled={props.disabled} onClick={(e) => {attachImage.click();}}><Photo /></IconButton>
+        </Box>
+        <Box className={classes.aButtonContainer}>
+          <IconButton className={classes.button} disabled={props.button} onClick={(e) => {attachFile.click();}}><AttachFile /></IconButton>
+        </Box>
+        <input type="file" ref={(ref) => {attachFile = ref;}} onChange={_handleAttachFile} style={{display: 'none'}} />
+        <input type="file" ref={(ref) => {attachImage = ref;}} accept="image/*" onChange={_handleAttachImage} style={{display: 'none'}} />
+      </Paper>
+      <Box className={classes.sendContainer}>
+        <Fab className={classes.button} size="small" color="primary" aria-label="add" disabled={props.disabled} onClick={_handleSend}>
+          <Send />
+        </Fab>
+      </Box>
+    </Box>
+  );
+}
 
-  handleMessageTyping(e) {
-    const newState = {message: e.target.value};
-    const now = new Date().getTime();
-    if (now - this.state.keypressTimestamp > KEYPRESS_DELAY) {
-      const topic = this.props.tinode.getTopic(this.props.topic);
-      if (topic.isSubscribed()) {
-        topic.noteKeyPress();
-      }
-      newState.keypressTimestamp = now;
-    }
-    this.setState(newState);
-  }
-
-  render() {
-    const {formatMessage} = this.props.intl;
-    const prompt = this.props.disabled ?
-      formatMessage(messages.messaging_disabled) :
-      formatMessage(messages.type_new_message);
-    return (
-      <div id="send-message-panel">
-        {this.props.disabled ?
-          <i className="material-icons disabled">photo</i> :
-          <a href="#" onClick={(e) => {e.preventDefault(); this.attachImage.click();}} title="Add image">
-            <i className="material-icons secondary">photo</i>
-          </a>}
-        {this.props.disabled ?
-          <i className="material-icons disabled">attach_file</i> :
-          <a href="#" onClick={(e) => {e.preventDefault(); this.attachFile.click();}} title="Attach file">
-            <i className="material-icons secondary">attach_file</i>
-          </a>}
-        <textarea id="sendMessage" placeholder={prompt}
-          disabled={this.props.disabled} value={this.state.message}
-          onChange={this.handleMessageTyping} onKeyPress={this.handleKeyPress}
-          ref={(ref) => {this.messageEditArea = ref;}}
-          autoFocus />
-          {this.props.disabled ?
-            <i className="material-icons disabled">send</i> :
-            <a href="#" onClick={this.handleSend} title="Send">
-              <i className="material-icons">send</i>
-            </a>}
-      <input type="file" ref={(ref) => {this.attachFile = ref;}}
-        onChange={this.handleAttachFile} style={{display: 'none'}} />
-      <input type="file" ref={(ref) => {this.attachImage = ref;}} accept="image/*"
-        onChange={this.handleAttachImage} style={{display: 'none'}} />
-      </div>
-    );
-  }
-};
-
-export default injectIntl(SendMessage);
+export default injectIntl(SendMessage); 
